@@ -2503,6 +2503,13 @@ cdata_setattro(CDataObject *cd, PyObject *attr, PyObject *value)
 {
     CFieldObject *cf;
     CTypeDescrObject *ct = cd->c_type;
+    if (value && (CDataOwn_Check(value) || Py_TYPE(value) == &CDataGCP_Type) && (value->ob_refcnt == 1))
+    {
+        if (PyErr_WarnEx(PyExc_UserWarning, 
+            "setting a struct field with a non-referenced value, expect trouble", 1))
+                return -1;
+    }
+
 
     if (ct->ct_flags & CT_POINTER)
         ct = ct->ct_itemdescr;

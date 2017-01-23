@@ -128,6 +128,27 @@ class TestFFI(backend_tests.BackendTests,
         alloc5 = ffi.new_allocator(myalloc5)
         py.test.raises(MemoryError, alloc5, "int[5]")
 
+    def test_no_ref_kept(self):
+        import gc, numpy as np
+        ffi = FFI(backend=self.Backend())
+        seen = []
+        def myalloc(size):
+            seen.append(size)
+            return ffi.new("char[]", b"X" * size)
+        def myfree(raw):
+            seen.append(raw)
+        ffi.cdef('typedef struct {char * buf;} vstruct;')
+        alloc = ffi.new_allocator(myalloc, myfree)
+        vstruct = ffi.new('vstruct[1]')
+        b = np.empty(10, dtype='uint8')
+        vstruct[0].buf = ffi.cast('char*', b.ctypes.data)
+        with pytest.warns(UserWarning):
+            vstruct[0].buf = alloc('char[]', chr(100) * 100)
+        for i in range(10):
+            gc.collect()    
+            if len(seen) > 1:
+                break
+        assert len(seen) == 2
 
 class TestBitfield:
     def check(self, source, expected_ofs_y, expected_align, expected_size):
@@ -505,3 +526,5 @@ class TestBitfield:
             py.test.raises(TypeError, cd)
             py.test.raises(TypeError, cd, ffi.NULL)
             py.test.raises(TypeError, cd, ffi.typeof("void *"))
+
+
