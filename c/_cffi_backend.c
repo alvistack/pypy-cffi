@@ -254,6 +254,15 @@ static PyTypeObject CDataGCP_Type;
 #define CDataOwn_Check(ob)    (Py_TYPE(ob) == &CDataOwning_Type ||      \
                                Py_TYPE(ob) == &CDataOwningGC_Type)
 
+#ifdef __SIZEOF_INT128__
+# define HAVE_TYPE_INT128
+typedef __int128 largest_int_t;
+typedef unsigned __int128 largest_uint_t;
+#else
+typedef long long largest_int_t;
+typedef unsigned long long largest_uint_t;
+#endif
+
 typedef union {
     unsigned char m_char;
     unsigned short m_short;
@@ -765,10 +774,17 @@ CDataObject_Or_PyFloat_Check(PyObject *ob)
              (((CDataObject *)ob)->c_type->ct_flags & CT_PRIMITIVE_FLOAT)));
 }
 
-static PY_LONG_LONG
-_my_PyLong_AsLongLong(PyObject *ob)
+#ifdef WORDS_BIGENDIAN
+# define IS_LITTLE_ENDIAN  0
+#else
+# define IS_LITTLE_ENDIAN  1
+#endif
+
+static largest_int_t
+_my_PyLong_AsLargestInt(PyObject *ob)
 {
-    /* (possibly) convert and cast a Python object to a long long.
+    /* (possibly) convert and cast a Python object to a long long (or even
+       __int128 if supported).
        Like PyLong_AsLongLong(), this version accepts a Python int too, and
        does convertions from other types of objects.  The difference is that
        this version refuses floats. */
@@ -779,11 +795,23 @@ _my_PyLong_AsLongLong(PyObject *ob)
     else 
 #endif
     if (PyLong_Check(ob)) {
-        return PyLong_AsLongLong(ob);
+        if (sizeof(largest_int_t) > sizeof(long long)) {
+            largest_int_t lllres;
+            long lres = PyLong_AsLong(ob);
+            if (lres != -1 || !PyErr_Occurred())
+                return lres;
+            PyErr_Clear();
+            if (_PyLong_AsByteArray(ob, (unsigned char *)&lllres,
+                                    sizeof(lllres), IS_LITTLE_ENDIAN, 1) >= 0)
+                return lllres;
+            return -1;
+        }
+        else
+            return PyLong_AsLongLong(ob);
     }
     else {
         PyObject *io;
-        PY_LONG_LONG res;
+        largest_int_t res;
         PyNumberMethods *nb = ob->ob_type->tp_as_number;
 
         if (CDataObject_Or_PyFloat_Check(ob) ||
@@ -796,7 +824,7 @@ _my_PyLong_AsLongLong(PyObject *ob)
             return -1;
 
         if (PyIntOrLong_Check(io)) {
-            res = _my_PyLong_AsLongLong(io);
+            res = _my_PyLong_AsLargestInt(io);
         }
         else {
             PyErr_SetString(PyExc_TypeError, "integer conversion failed");
@@ -807,8 +835,8 @@ _my_PyLong_AsLongLong(PyObject *ob)
     }
 }
 
-static unsigned PY_LONG_LONG
-_my_PyLong_AsUnsignedLongLong(PyObject *ob, int strict)
+static largest_uint_t
+_my_PyLong_AsLargestUnsignedInt(PyObject *ob, int strict)
 {
     /* (possibly) convert and cast a Python object to an unsigned long long.
        Like PyLong_AsLongLong(), this version accepts a Python int too, and
@@ -820,40 +848,57 @@ _my_PyLong_AsUnsignedLongLong(PyObject *ob, int strict)
         long value1 = PyInt_AS_LONG(ob);
         if (strict && value1 < 0)
             goto negative;
-        return (unsigned PY_LONG_LONG)(PY_LONG_LONG)value1;
+        return (largest_uint_t)(largest_int_t)value1;
     }
     else
 #endif
     if (PyLong_Check(ob)) {
         if (strict) {
+            unsigned long lres;
+            largest_uint_t lllres;
             if (_PyLong_Sign(ob) < 0)
                 goto negative;
-            return PyLong_AsUnsignedLongLong(ob);
+            lres = PyLong_AsUnsignedLong(ob);
+            if (lres != -1 || !PyErr_Occurred())
+                return lres;
+            PyErr_Clear();
+            if (_PyLong_AsByteArray(ob, (unsigned char *)&lllres,
+                                    sizeof(lllres), IS_LITTLE_ENDIAN, 0) >= 0)
+                return lllres;
+            return -1;
         }
         else {
-            return PyLong_AsUnsignedLongLongMask(ob);
+            largest_uint_t lllres;
+            if (!PyLong_AsByteArray(ob, (unsigned char *)&lllres,
+                                    sizeof(lllres), IS_LITTLE_ENDIAN, 0) >= 0)
+                return lllres;
+            if (PyErr_ExceptionMatches(&PyExc_OverflowError)) {
+                PyErr_Clear();
+                return lllres;
+            }
+            return -1;
         }
     }
     else {
         PyObject *io;
-        unsigned PY_LONG_LONG res;
+        largest_uint_t res;
         PyNumberMethods *nb = ob->ob_type->tp_as_number;
 
         if ((strict && CDataObject_Or_PyFloat_Check(ob)) ||
                 nb == NULL || nb->nb_int == NULL) {
             PyErr_SetString(PyExc_TypeError, "an integer is required");
-            return (unsigned PY_LONG_LONG)-1;
+            return (largest_uint_t)-1;
         }
         io = (*nb->nb_int) (ob);
         if (io == NULL)
-            return (unsigned PY_LONG_LONG)-1;
+            return (largest_uint_t)-1;
 
         if (PyIntOrLong_Check(io)) {
-            res = _my_PyLong_AsUnsignedLongLong(io, strict);
+            res = _my_PyLong_AsLargestUnsignedInt(io, strict);
         }
         else {
             PyErr_SetString(PyExc_TypeError, "integer conversion failed");
-            res = (unsigned PY_LONG_LONG)-1;
+            res = (largest_uint_t)-1;
         }
         Py_DECREF(io);
         return res;
@@ -862,7 +907,84 @@ _my_PyLong_AsUnsignedLongLong(PyObject *ob, int strict)
  negative:
     PyErr_SetString(PyExc_OverflowError,
                     "can't convert negative number to unsigned");
-    return (unsigned PY_LONG_LONG)-1;
+    return (largest_uint_t)-1;
+}
+
+static Py_intptr_t
+_my_PyLong_AsIntPtrT(PyObject *ob)
+{
+    /* (possibly) convert and cast a Python object to a Py_intptr_t.
+       Like PyLong_AsLongLong(), this version accepts a Python int too, and
+       does convertions from other types of objects.  Rounds floats
+       and masks the result. */
+#if PY_MAJOR_VERSION < 3
+    if (PyInt_Check(ob)) {
+        long value1 = PyInt_AS_LONG(ob);
+        return (Py_intptr_t)value1;
+    }
+    else
+#endif
+    if (PyLong_Check(ob)) {
+        if (sizeof(Py_intptr_t) <= sizeof(unsigned long)) {
+            unsigned long res = PyLong_AsUnsignedLongMask(ob);
+            return (Py_intptr_t)res;
+        }
+        else {
+            unsigned long long res = PyLong_AsUnsignedLongLongMask(ob);
+            return (Py_intptr_t)res;
+        }
+    }
+    else {
+        PyObject *io;
+        Py_intptr_t res;
+        PyNumberMethods *nb = ob->ob_type->tp_as_number;
+
+        io = (*nb->nb_int) (ob);
+        if (io == NULL)
+            return (Py_intptr_t)-1;
+
+        if (PyIntOrLong_Check(io)) {
+            res = _my_PyLong_AsIntPtrT(io);
+        }
+        else {
+            PyErr_SetString(PyExc_TypeError, "integer conversion failed");
+            res = (Py_intptr_t)-1;
+        }
+        Py_DECREF(io);
+        return res;
+    }
+}
+
+static PyObject *
+_my_PyLong_FromLargestInt(largest_int_t value)
+{
+    /* like PyLong_FromLongLong() but accept a possibly-bigger 'value'
+       of type 'largest_int_t'. */
+
+    if (sizeof(largest_int_t) == sizeof(long long) ||
+            value == (largest_int_t)(long long)value) {
+        return PyLong_FromLongLong((long long)value);
+    }
+    else {
+        return _PyLong_FromByteArray((unsigned char *)&value,
+                                     sizeof(value), IS_LITTLE_ENDIAN, 1);
+    }
+}
+
+static PyObject *
+_my_PyLong_FromLargestUnsignedInt(largest_uint_t value)
+{
+    /* like PyLong_FromUnsignedLongLong() but accept a possibly-bigger 'value'
+       of type 'largest_uint_t'. */
+
+    if (sizeof(largest_uint_t) == sizeof(unsigned long long) ||
+            value == (largest_uint_t)(unsigned long long)value) {
+        return PyLong_FromUnsignedLongLong((unsigned long long)value);
+    }
+    else {
+        return _PyLong_FromByteArray((unsigned char *)&value,
+                                     sizeof(value), IS_LITTLE_ENDIAN, 0);
+    }
 }
 
 #define _read_raw_data(type)                    \
@@ -874,7 +996,7 @@ _my_PyLong_AsUnsignedLongLong(PyObject *ob, int strict)
         }                                       \
     } while(0)
 
-static PY_LONG_LONG
+static largest_int_t
 read_raw_signed_data(char *target, int size)
 {
     _read_raw_data(signed char);
@@ -882,11 +1004,12 @@ read_raw_signed_data(char *target, int size)
     _read_raw_data(int);
     _read_raw_data(long);
     _read_raw_data(PY_LONG_LONG);
+    _read_raw_data(largest_int_t);
     Py_FatalError("read_raw_signed_data: bad integer size");
     return 0;
 }
 
-static unsigned PY_LONG_LONG
+static largest_uint_t
 read_raw_unsigned_data(char *target, int size)
 {
     _read_raw_data(unsigned char);
@@ -894,6 +1017,7 @@ read_raw_unsigned_data(char *target, int size)
     _read_raw_data(unsigned int);
     _read_raw_data(unsigned long);
     _read_raw_data(unsigned PY_LONG_LONG);
+    _read_raw_data(largest_uint_t);
     Py_FatalError("read_raw_unsigned_data: bad integer size");
     return 0;
 }
@@ -918,13 +1042,14 @@ void _cffi_memcpy(char *target, const void *src, size_t size)
     } while(0)
 
 static void
-write_raw_integer_data(char *target, unsigned PY_LONG_LONG source, int size)
+write_raw_integer_data(char *target, largest_uint_t source, int size)
 {
     _write_raw_data(unsigned char);
     _write_raw_data(unsigned short);
     _write_raw_data(unsigned int);
     _write_raw_data(unsigned long);
     _write_raw_data(unsigned PY_LONG_LONG);
+    _write_raw_data(largest_uint_t);
     Py_FatalError("write_raw_integer_data: bad integer size");
 }
 
@@ -1061,16 +1186,16 @@ convert_to_object(char *data, CTypeDescrObject *ct)
         }
     }
     else if (ct->ct_flags & CT_PRIMITIVE_SIGNED) {
-        PY_LONG_LONG value;
+        largest_int_t value;
         /*READ(data, ct->ct_size)*/
         value = read_raw_signed_data(data, ct->ct_size);
         if (ct->ct_flags & CT_PRIMITIVE_FITS_LONG)
             return PyInt_FromLong((long)value);
         else
-            return PyLong_FromLongLong(value);
+            return _my_PyLong_FromLargestInt(value);
     }
     else if (ct->ct_flags & CT_PRIMITIVE_UNSIGNED) {
-        unsigned PY_LONG_LONG value;
+        largest_uint_t value;
         /*READ(data, ct->ct_size)*/
         value = read_raw_unsigned_data(data, ct->ct_size);
 
@@ -1092,7 +1217,7 @@ convert_to_object(char *data, CTypeDescrObject *ct)
             return PyInt_FromLong((long)value);
         }
         else
-            return PyLong_FromUnsignedLongLong(value);
+            return _my_PyLong_FromLargestUnsignedInt(value);
     }
     else if (ct->ct_flags & CT_PRIMITIVE_FLOAT) {
         /*READ(data, ct->ct_size)*/
@@ -1134,6 +1259,7 @@ convert_to_object_bitfield(char *data, CFieldObject *cf)
 {
     CTypeDescrObject *ct = cf->cf_type;
     /*READ(data, ct->ct_size)*/
+    assert(ct->ct_size <= sizeof(PY_LONG_LONG));
 
     if (ct->ct_flags & CT_PRIMITIVE_SIGNED) {
         unsigned PY_LONG_LONG value, valuemask, shiftforsign;
@@ -1588,7 +1714,7 @@ static int
 convert_from_object(char *data, CTypeDescrObject *ct, PyObject *init)
 {
     const char *expected;
-    char buf[sizeof(PY_LONG_LONG)];
+    char buf[sizeof(largest_int_t)];
 
     /*if (ct->ct_size > 0)*/
         /*WRITE(data, ct->ct_size)*/
@@ -1651,7 +1777,7 @@ convert_from_object(char *data, CTypeDescrObject *ct, PyObject *init)
         return 0;
     }
     if (ct->ct_flags & CT_PRIMITIVE_SIGNED) {
-        PY_LONG_LONG value = _my_PyLong_AsLongLong(init);
+        largest_int_t value = _my_PyLong_AsLargestInt(init);
         if (value == -1 && PyErr_Occurred())
             return -1;
         write_raw_integer_data(buf, value, ct->ct_size);
@@ -1661,8 +1787,8 @@ convert_from_object(char *data, CTypeDescrObject *ct, PyObject *init)
         return 0;
     }
     if (ct->ct_flags & CT_PRIMITIVE_UNSIGNED) {
-        unsigned PY_LONG_LONG value = _my_PyLong_AsUnsignedLongLong(init, 1);
-        if (value == (unsigned PY_LONG_LONG)-1 && PyErr_Occurred())
+        largest_uint_t value = _my_PyLong_AsLargestUnsignedInt(init, 1);
+        if (value == (largest_uint_t)-1 && PyErr_Occurred())
             return -1;
         if (ct->ct_flags & CT_IS_BOOL) {
             if (value > 1ULL)      /* value != 0 && value != 1 */
@@ -1759,6 +1885,7 @@ convert_from_object_bitfield(char *data, CFieldObject *cf, PyObject *init)
     if (value == -1 && PyErr_Occurred())
         return -1;
 
+    assert(ct->ct_size <= sizeof(PY_LONG_LONG));
     if (ct->ct_flags & CT_PRIMITIVE_SIGNED) {
         fmin = -(1LL << (cf->cf_bitsize-1));
         fmax = (1LL << (cf->cf_bitsize-1)) - 1LL;
@@ -3983,7 +4110,7 @@ static CDataObject *_new_casted_primitive(CTypeDescrObject *ct)
 
 static CDataObject *cast_to_integer_or_char(CTypeDescrObject *ct, PyObject *ob)
 {
-    unsigned PY_LONG_LONG value;
+    largest_uint_t value;
     CDataObject *cd;
 
     if (CData_Check(ob) &&
@@ -4033,8 +4160,8 @@ static CDataObject *cast_to_integer_or_char(CTypeDescrObject *ct, PyObject *ob)
         value = res;
     }
     else {
-        value = _my_PyLong_AsUnsignedLongLong(ob, 0);
-        if (value == (unsigned PY_LONG_LONG)-1 && PyErr_Occurred())
+        value = _my_PyLong_AsLargestUnsignedInt(ob, 0);
+        if (value == (largest_uint_t)-1 && PyErr_Occurred())
             return NULL;
     }
     if (ct->ct_flags & CT_IS_BOOL)
@@ -4084,7 +4211,7 @@ static PyObject *do_cast(CTypeDescrObject *ct, PyObject *ob)
            Note that casting to an array is an extension to the C language,
            which seems to be necessary in order to sanely get a
            <cdata 'int[3]'> at some address. */
-        unsigned PY_LONG_LONG value;
+        Py_intptr_t value;
 
         if (CData_Check(ob)) {
             CDataObject *cdsrc = (CDataObject *)ob;
@@ -4101,10 +4228,10 @@ static PyObject *do_cast(CTypeDescrObject *ct, PyObject *ob)
                 return NULL;
             return new_simple_cdata((char *)f, ct);
         }
-        value = _my_PyLong_AsUnsignedLongLong(ob, 0);
-        if (value == (unsigned PY_LONG_LONG)-1 && PyErr_Occurred())
+        value = _my_PyLong_AsIntPtrT(ob);
+        if (value == (Py_intptr_t)-1 && PyErr_Occurred())
             return NULL;
-        return new_simple_cdata((char *)(Py_intptr_t)value, ct);
+        return new_simple_cdata((char *)value, ct);
     }
     else if (ct->ct_flags & (CT_PRIMITIVE_SIGNED|CT_PRIMITIVE_UNSIGNED
                              |CT_PRIMITIVE_CHAR)) {
@@ -4624,6 +4751,7 @@ static PyObject *new_primitive_type(const char *name)
        EPTYPE(ui, unsigned int, CT_PRIMITIVE_UNSIGNED )         \
        EPTYPE(ul, unsigned long, CT_PRIMITIVE_UNSIGNED )        \
        EPTYPE(ull, unsigned long long, CT_PRIMITIVE_UNSIGNED )  \
+       ENUM_PRIMITIVE_TYPES_INT128                              \
        EPTYPE(f, float, CT_PRIMITIVE_FLOAT )                    \
        EPTYPE(d, double, CT_PRIMITIVE_FLOAT )                   \
        EPTYPE(ld, long double, CT_PRIMITIVE_FLOAT | CT_IS_LONGDOUBLE ) \
@@ -4672,6 +4800,14 @@ static PyObject *new_primitive_type(const char *name)
                            (((wchar_t)-1) > 0 ? 0 : CT_IS_SIGNED_WCHAR))
 #else
 # define ENUM_PRIMITIVE_TYPES_WCHAR   /* nothing */
+#endif
+
+#ifdef HAVE_TYPE_INT128
+# define ENUM_PRIMITIVE_TYPES_INT128                                          \
+       EPTYPE2(i128, "__int128", largest_int_t, CT_PRIMITIVE_SIGNED)          \
+       EPTYPE2(u128, "unsigned __int128", largest_uint_t, CT_PRIMITIVE_SIGNED)
+#else
+# define ENUM_PRIMITIVE_TYPES_INT128   /* nothing */
 #endif
 
 #define EPTYPE(code, typename, flags)  EPTYPE2(code, #typename, typename, flags)
@@ -5275,6 +5411,12 @@ static PyObject *b_complete_struct_or_union(PyObject *self, PyObject *args)
                         "field '%s.%s' declared as '%s' cannot be a bit field",
                              ct->ct_name, PyText_AS_UTF8(fname),
                              ftype->ct_name);
+                goto error;
+            }
+            if (ftype->ct_size > sizeof(PY_LONG_LONG)) {
+                PyErr_Format(PyExc_NotImplementedError,
+                        "field '%s.%s' is a bit field larger than 'long long'",
+                             ct->ct_name, PyText_AS_UTF8(fname));
                 goto error;
             }
             if (fbitsize > 8 * ftype->ct_size) {
@@ -5986,7 +6128,7 @@ static int convert_from_object_fficallback(char *result,
         if (!encode_result_for_libffi)
             goto skip;
         if (ctype->ct_flags & CT_PRIMITIVE_SIGNED) {
-            PY_LONG_LONG value;
+            largest_int_t value;
             /* It's probably fine to always zero-extend, but you never
                know: maybe some code somewhere expects a negative
                'short' result to be returned into EAX as a 32-bit
@@ -5999,13 +6141,13 @@ static int convert_from_object_fficallback(char *result,
                 return -1;
             /* manual inlining and tweaking of convert_from_object()
                in order to write a whole 'ffi_arg'. */
-            value = _my_PyLong_AsLongLong(pyobj);
+            value = _my_PyLong_AsLargestInt(pyobj);
             if (value == -1 && PyErr_Occurred())
                 return -1;
             write_raw_integer_data(result, value, sizeof(ffi_arg));
             return 0;
         }
-        else if (ctype->ct_flags & (CT_PRIMITIVE_CHAR | CT_PRIMITIVE_SIGNED |
+        else if (ctype->ct_flags & (CT_PRIMITIVE_CHAR |
                                     CT_PRIMITIVE_UNSIGNED |
                                     CT_POINTER | CT_FUNCTIONPTR)) {
             /* zero extension: fill the '*result' with zeros, and (on big-
