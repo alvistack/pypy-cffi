@@ -4814,7 +4814,7 @@ static PyObject *new_primitive_type(const char *name)
 #ifdef HAVE_TYPE_INT128
 # define ENUM_PRIMITIVE_TYPES_INT128                                          \
        EPTYPE2(i128, "__int128", largest_int_t, CT_PRIMITIVE_SIGNED)          \
-       EPTYPE2(u128, "unsigned __int128", largest_uint_t, CT_PRIMITIVE_SIGNED)
+       EPTYPE2(u128, "unsigned __int128", largest_uint_t, CT_PRIMITIVE_UNSIGNED)
 #else
 # define ENUM_PRIMITIVE_TYPES_INT128   /* nothing */
 #endif
@@ -4867,6 +4867,9 @@ static PyObject *new_primitive_type(const char *name)
         case 2: ffitype = &ffi_type_sint16; break;
         case 4: ffitype = &ffi_type_sint32; break;
         case 8: ffitype = &ffi_type_sint64; break;
+#ifdef HAVE_TYPE_INT128
+        case 16: ffitype = NULL; break;
+#endif
         default: goto bad_ffi_type;
         }
     }
@@ -4900,6 +4903,9 @@ static PyObject *new_primitive_type(const char *name)
         case 2: ffitype = &ffi_type_uint16; break;
         case 4: ffitype = &ffi_type_uint32; break;
         case 8: ffitype = &ffi_type_uint64; break;
+#ifdef HAVE_TYPE_INT128
+        case 16: ffitype = NULL; break;
+#endif
         default: goto bad_ffi_type;
         }
     }
@@ -4929,7 +4935,8 @@ static PyObject *new_primitive_type(const char *name)
  bad_ffi_type:
     PyErr_Format(PyExc_NotImplementedError,
                  "primitive type '%s' has size %d; "
-                 "the supported sizes are 1, 2, 4, 8",
+                 "the supported sizes are 1, 2, 4, 8 "
+                 "(or 16 if '__int128' is supported)",
                  name, (int)ptypes->size);
     return NULL;
 }
@@ -5638,7 +5645,8 @@ static ffi_type *fb_fill_type(struct funcbuilder_s *fb, CTypeDescrObject *ct,
 {
     const char *place = is_result_type ? "return value" : "argument";
 
-    if (ct->ct_flags & (CT_PRIMITIVE_ANY & ~CT_PRIMITIVE_COMPLEX)) {
+    if ((ct->ct_flags & (CT_PRIMITIVE_ANY & ~CT_PRIMITIVE_COMPLEX)) &&
+            ct->ct_extra != NULL) {
         return (ffi_type *)ct->ct_extra;
     }
     else if (ct->ct_flags & (CT_POINTER|CT_FUNCTIONPTR)) {
@@ -7797,9 +7805,22 @@ _cffi_to_c_UNSIGNED_FN(int, 8)
 _cffi_to_c_UNSIGNED_FN(int, 16)
 _cffi_to_c_UNSIGNED_FN(unsigned int, 32)
 _cffi_to_c_UNSIGNED_FN(unsigned PY_LONG_LONG, 64)
+
 #ifdef HAVE_TYPE_INT128
+
 _cffi_to_c_SIGNED_FN(largest_int_t, 128)
 _cffi_to_c_UNSIGNED_FN(largest_uint_t, 128)
+
+#else
+
+static largest_int_t _cffi_to_c_i128(PyObject *obj) {
+    PyErr_SetString(PyExc_NotImplementedError, "type __int128 not supported");
+    return -1;
+}
+static largest_uint_t _cffi_to_c_u128(PyObject *obj) {
+    return _cffi_to_c_i128(obj);
+}
+
 #endif
 
 static PyObject *_cffi_from_c_pointer(char *ptr, CTypeDescrObject *ct)
@@ -7948,6 +7969,8 @@ static void *cffi_exports[] = {
     cffi_call_python,
     _cffi_to_c_wchar3216_t,
     _cffi_from_c_wchar3216_t,
+    _cffi_to_c_i128,
+    _cffi_to_c_u128,
 };
 
 static struct { const char *name; int value; } all_dlopen_flags[] = {

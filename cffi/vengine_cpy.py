@@ -243,6 +243,8 @@ class VCPythonEngine(object):
         extraarg = ''
         if isinstance(tp, model.PrimitiveType):
             if tp.is_integer_type() and tp.name != '_Bool':
+                if tp.name.endswith('__int128'):
+                    raise NotImplementedError('type %s' % (tp,))
                 converter = '_cffi_to_c_int'
                 extraarg = ', %s' % tp.name
             else:

@@ -2560,3 +2560,15 @@ def test_passing_large_list():
     arg = list(range(20000000))
     lib.passing_large_list(arg)
     # assert did not segfault
+
+def test_int128():
+    ffi = FFI()
+    with py.test.raises(NotImplementedError):
+        ffi.cast("__int128", 0)
+        ffi.cdef("""__int128 f(__int128 x, __int128 y);""")
+        lib = ffi.verify("""
+            static __int128 f(__int128 x, __int128 y) { return x - y; }
+        """)
+        x = 0x0123456789abcdef0123456789abcdef
+        y = 0x102030405060708090a0b0c0d0e0f000
+        lib.f(x, y)

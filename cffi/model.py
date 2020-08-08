@@ -120,6 +120,8 @@ class PrimitiveType(BasePrimitiveType):
         'float _Complex':     'j',
         'double _Complex':    'j',
         '_Bool':              'i',
+        '__int128':           'i',
+        'unsigned __int128':  'i',
         # the following types are not primitive in the C sense
         'wchar_t':            'c',
         'char16_t':           'c',
@@ -597,6 +599,8 @@ def global_cache(srctype, ffi, funcname, *args, **kwds):
         res = getattr(ffi._backend, funcname)(*args)
     except NotImplementedError as e:
         raise NotImplementedError("%s: %r: %s" % (funcname, srctype, e))
+    except KeyError:
+        raise NotImplementedError("%s: %r" % (funcname, srctype))
     # note that setdefault() on WeakValueDictionary is not atomic
     # and contains a rare bug (http://bugs.python.org/issue19542);
     # we have to use a lock and do it ourselves

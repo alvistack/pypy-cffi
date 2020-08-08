@@ -131,8 +131,14 @@ def test_sizeof_type():
     assert sizeof(p) == 2
 
 def test_integer_types():
-    for name in ['signed char', 'short', 'int', 'long', 'long long']:
-        p = new_primitive_type(name)
+    for name in ['signed char', 'short', 'int', 'long', 'long long',
+                 '__int128']:
+        try:
+            p = new_primitive_type(name)
+        except KeyError as e:
+            if '__int128' in str(e):
+                continue
+            raise
         size = sizeof(p)
         min = -(1 << (8*size-1))
         max = (1 << (8*size-1)) - 1
@@ -144,8 +150,13 @@ def test_integer_types():
         assert long(cast(p, min - 1)) == max
         assert int(cast(p, b'\x08')) == 8
         assert int(cast(p, u+'\x08')) == 8
-    for name in ['char', 'short', 'int', 'long', 'long long']:
-        p = new_primitive_type('unsigned ' + name)
+    for name in ['char', 'short', 'int', 'long', 'long long', '__int128']:
+        try:
+            p = new_primitive_type('unsigned ' + name)
+        except KeyError as e:
+            if '__int128' in str(e):
+                continue
+            raise
         size = sizeof(p)
         max = (1 << (8*size)) - 1
         assert int(cast(p, 0)) == 0
@@ -4496,3 +4507,13 @@ def test_type_available_with_correct_names():
         tp = getattr(_cffi_backend, name)
         assert isinstance(tp, type)
         assert (tp.__module__, tp.__name__) == ('_cffi_backend', name)
+
+def test_int128():
+    try:
+        BInt128 = new_primitive_type("__int128")
+    except KeyError:
+        py.test.skip("no __int128")
+    huge = 0x0123456789abcdef0123456789abcdef
+    p = cast(BInt128, huge)
+    assert int(p) == huge
+    assert str(huge) in repr(p)
