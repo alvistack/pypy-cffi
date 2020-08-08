@@ -801,7 +801,8 @@ _my_PyLong_AsLargestInt(PyObject *ob)
             if (lres != -1 || !PyErr_Occurred())
                 return lres;
             PyErr_Clear();
-            if (_PyLong_AsByteArray(ob, (unsigned char *)&lllres,
+            if (_PyLong_AsByteArray((PyLongObject *)ob,
+                                    (unsigned char *)&lllres,
                                     sizeof(lllres), IS_LITTLE_ENDIAN, 1) >= 0)
                 return lllres;
             return -1;
@@ -862,17 +863,25 @@ _my_PyLong_AsLargestUnsignedInt(PyObject *ob, int strict)
             if (lres != -1 || !PyErr_Occurred())
                 return lres;
             PyErr_Clear();
-            if (_PyLong_AsByteArray(ob, (unsigned char *)&lllres,
+            /* use 'is_signed == 0': this raises OverflowError if the number
+               is too large to fit in sizeof(lllres) */
+            if (_PyLong_AsByteArray((PyLongObject *)ob,
+                                    (unsigned char *)&lllres,
                                     sizeof(lllres), IS_LITTLE_ENDIAN, 0) >= 0)
                 return lllres;
             return -1;
         }
         else {
             largest_uint_t lllres;
-            if (!PyLong_AsByteArray(ob, (unsigned char *)&lllres,
-                                    sizeof(lllres), IS_LITTLE_ENDIAN, 0) >= 0)
+            /* use 'is_signed == 1' and ignore OverflowError: the possibly
+               negative number is copied into lllres as far as it fits,
+               and the rest is truncated (can't use 'is_signed == 0' because
+               it doesn't copy anything for negative inputs) */
+            if (_PyLong_AsByteArray((PyLongObject *)ob,
+                                    (unsigned char *)&lllres,
+                                    sizeof(lllres), IS_LITTLE_ENDIAN, 1) >= 0)
                 return lllres;
-            if (PyErr_ExceptionMatches(&PyExc_OverflowError)) {
+            if (PyErr_ExceptionMatches(PyExc_OverflowError)) {
                 PyErr_Clear();
                 return lllres;
             }
@@ -6507,6 +6516,11 @@ static PyObject *b_new_enum_type(PyObject *self, PyObject *args)
                         "expected a primitive signed or unsigned base type");
         return NULL;
     }
+    if (basetd->ct_size > sizeof(PY_LONG_LONG)) {
+        PyErr_SetString(PyExc_OverflowError,
+                        "base type for enum cannot be __int128");
+        return NULL;
+    }
 
     dict1 = PyDict_New();
     if (dict1 == NULL)
@@ -7759,20 +7773,18 @@ static PyMethodDef FFIBackendMethods[] = {
 
 #define _cffi_to_c_SIGNED_FN(RETURNTYPE, SIZE)                          \
 static RETURNTYPE _cffi_to_c_i##SIZE(PyObject *obj) {                   \
-    PY_LONG_LONG tmp = _my_PyLong_AsLongLong(obj);                      \
-    if ((tmp > (PY_LONG_LONG)((1ULL<<(SIZE-1)) - 1)) ||                 \
-        (tmp < (PY_LONG_LONG)(0ULL-(1ULL<<(SIZE-1)))))                  \
-        if (!PyErr_Occurred())                                          \
-            return (RETURNTYPE)_convert_overflow(obj, #SIZE "-bit int"); \
+    largest_int_t tmp = _my_PyLong_AsLargestInt(obj);                   \
+    if ((tmp > (largest_int_t)((((largest_uint_t)1)<<(SIZE-1)) - 1)) || \
+        (tmp < (largest_int_t)(-(((largest_uint_t)1)<<(SIZE-1)))))      \
+        return (RETURNTYPE)_convert_overflow(obj, #SIZE "-bit int");    \
     return (RETURNTYPE)tmp;                                             \
 }
 
 #define _cffi_to_c_UNSIGNED_FN(RETURNTYPE, SIZE)                        \
 static RETURNTYPE _cffi_to_c_u##SIZE(PyObject *obj) {                   \
-    unsigned PY_LONG_LONG tmp = _my_PyLong_AsUnsignedLongLong(obj, 1);  \
-    if (tmp > ~(((unsigned PY_LONG_LONG)-2) << (SIZE-1)))               \
-        if (!PyErr_Occurred())                                          \
-            return (RETURNTYPE)_convert_overflow(obj,                   \
+    largest_uint_t tmp = _my_PyLong_AsLargestUnsignedInt(obj, 1);       \
+    if (tmp > ~(((largest_uint_t)-2) << (SIZE-1)))                      \
+        return (RETURNTYPE)_convert_overflow(obj,                       \
                                    #SIZE "-bit unsigned int");          \
     return (RETURNTYPE)tmp;                                             \
 }
@@ -7785,6 +7797,10 @@ _cffi_to_c_UNSIGNED_FN(int, 8)
 _cffi_to_c_UNSIGNED_FN(int, 16)
 _cffi_to_c_UNSIGNED_FN(unsigned int, 32)
 _cffi_to_c_UNSIGNED_FN(unsigned PY_LONG_LONG, 64)
+#ifdef HAVE_TYPE_INT128
+_cffi_to_c_SIGNED_FN(largest_int_t, 128)
+_cffi_to_c_UNSIGNED_FN(largest_uint_t, 128)
+#endif
 
 static PyObject *_cffi_from_c_pointer(char *ptr, CTypeDescrObject *ct)
 {
@@ -7820,13 +7836,11 @@ static long double _cffi_to_c_long_double(PyObject *obj)
 
 static _Bool _cffi_to_c__Bool(PyObject *obj)
 {
-    PY_LONG_LONG tmp = _my_PyLong_AsLongLong(obj);
+    largest_int_t tmp = _my_PyLong_AsLargestInt(obj);
     if (tmp == 0)
         return 0;
     else if (tmp == 1)
         return 1;
-    else if (PyErr_Occurred())
-        return (_Bool)-1;
     else
         return (_Bool)_convert_overflow(obj, "_Bool");
 }
