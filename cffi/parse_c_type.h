@@ -83,8 +83,10 @@ typedef void *_cffi_opcode_t;
 #define _CFFI_PRIM_DOUBLECOMPLEX 49
 #define _CFFI_PRIM_CHAR16       50
 #define _CFFI_PRIM_CHAR32       51
+#define _CFFI_PRIM_INT128       52
+#define _CFFI_PRIM_UINT128      53
 
-#define _CFFI__NUM_PRIM         52
+#define _CFFI__NUM_PRIM         54
 #define _CFFI__UNKNOWN_PRIM           (-1)
 #define _CFFI__UNKNOWN_FLOAT_PRIM     (-2)
 #define _CFFI__UNKNOWN_LONG_DOUBLE    (-3)

@@ -155,10 +155,14 @@ static PyObject *build_primitive_type(int num)
         "double _Complex",
         "char16_t",
         "char32_t",
+        "__int128",
+        "unsigned __int128",
     };
     PyObject *x;
 
-    assert(sizeof(primitive_name) == sizeof(*primitive_name) * _CFFI__NUM_PRIM);
+    if (sizeof(primitive_name) != sizeof(*primitive_name) * _CFFI__NUM_PRIM)
+        Py_FatalError("realize_c_type.c: fix primitive_name[]");
+
     if (num == _CFFI_PRIM_VOID) {
         x = new_void_type();
     }

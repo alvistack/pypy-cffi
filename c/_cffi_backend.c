@@ -60,6 +60,15 @@
 # endif
 #endif
 
+#ifdef __SIZEOF_INT128__
+# define HAVE_TYPE_INT128
+typedef __int128 largest_int_t;
+typedef unsigned __int128 largest_uint_t;
+#else
+typedef long long largest_int_t;
+typedef unsigned long long largest_uint_t;
+#endif
+
 
 /* Define the following macro ONLY if you trust libffi's version of
  * ffi_closure_alloc() more than the code in malloc_closure.h.
@@ -253,15 +262,6 @@ static PyTypeObject CDataGCP_Type;
                                Py_TYPE(ob) == &CDataGCP_Type)
 #define CDataOwn_Check(ob)    (Py_TYPE(ob) == &CDataOwning_Type ||      \
                                Py_TYPE(ob) == &CDataOwningGC_Type)
-
-#ifdef __SIZEOF_INT128__
-# define HAVE_TYPE_INT128
-typedef __int128 largest_int_t;
-typedef unsigned __int128 largest_uint_t;
-#else
-typedef long long largest_int_t;
-typedef unsigned long long largest_uint_t;
-#endif
 
 typedef union {
     unsigned char m_char;

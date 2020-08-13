@@ -43,6 +43,8 @@ enum token_e {
 
     TOK_CDECL,
     TOK_STDCALL,
+
+    TOK_INT128,
 };
 
 typedef struct {
@@ -160,6 +162,7 @@ static void next_token(token_t *tok)
         if (tok->size == 7 && !memcmp(p,"__cdecl",7))  tok->kind = TOK_CDECL;
         if (tok->size == 9 && !memcmp(p,"__stdcall",9))tok->kind = TOK_STDCALL;
         if (tok->size == 8 && !memcmp(p,"_Complex",8)) tok->kind = TOK__COMPLEX;
+        if (tok->size == 8 && !memcmp(p,"__int128",8)) tok->kind = TOK_INT128;
         break;
     case 'c':
         if (tok->size == 4 && !memcmp(p, "char", 4))   tok->kind = TOK_CHAR;

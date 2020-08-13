@@ -2360,11 +2360,11 @@ def test_ffi_new_with_cycles():
 
 def test_int128():
     ffi = FFI()
-    ffi.cdef("""__int128 f(__int128 x, __int128 y);""")
+    ffi.cdef("""__int128 f128(__int128 x, __int128 y);""")
     lib = ffi.verify("""
-        static __int128 f(__int128 x, __int128 y) { return x - y; }
+        static __int128 f128(__int128 x, __int128 y) { return x - y; }
     """)
     x = 0x0123456789abcdef0123456789abcdef
     y = 0x102030405060708090a0b0c0d0e0f000
-    assert lib.f(x, y) == x - y
-    assert lib.f(y, x) == y - x
+    assert lib.f128(x, y) == x - y
+    assert lib.f128(y, x) == y - x

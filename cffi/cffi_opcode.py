@@ -109,8 +109,10 @@ PRIM_FLOATCOMPLEX  = 48
 PRIM_DOUBLECOMPLEX = 49
 PRIM_CHAR16        = 50
 PRIM_CHAR32        = 51
+PRIM_INT128        = 52
+PRIM_UINT128       = 53
 
-_NUM_PRIM          = 52
+_NUM_PRIM          = 54
 _UNKNOWN_PRIM          = -1
 _UNKNOWN_FLOAT_PRIM    = -2
 _UNKNOWN_LONG_DOUBLE   = -3
@@ -169,6 +171,8 @@ PRIMITIVE_TO_INDEX = {
     'uint_fast64_t':      PRIM_UINT_FAST64,
     'intmax_t':           PRIM_INTMAX,
     'uintmax_t':          PRIM_UINTMAX,
+    '__int128':           PRIM_INT128,
+    'unsigned __int128':  PRIM_UINT128,
     }
 
 F_UNION         = 0x01

@@ -6,6 +6,7 @@ from .cffi_opcode import *
 VERSION_BASE = 0x2601
 VERSION_EMBEDDED = 0x2701
 VERSION_CHAR16CHAR32 = 0x2801
+VERSION_INT128 = 0x2901
 
 
 class GlobalExpr:
@@ -519,6 +520,8 @@ class Recompiler:
         extraarg = ''
         if isinstance(tp, model.BasePrimitiveType) and not tp.is_complex_type():
             if tp.is_integer_type() and tp.name != '_Bool':
+                if tp.name.endswith('__int128'):
+                    self.needs_version(VERSION_INT128)
                 converter = '_cffi_to_c_int'
                 extraarg = ', %s' % tp.name
             elif isinstance(tp, model.UnknownFloatType):
@@ -584,6 +587,8 @@ class Recompiler:
     def _convert_expr_from_c(self, tp, var, context):
         if isinstance(tp, model.BasePrimitiveType):
             if tp.is_integer_type() and tp.name != '_Bool':
+                if tp.name.endswith('__int128'):
+                    self.needs_version(VERSION_INT128)
                 return '_cffi_from_c_int(%s, %s)' % (var, tp.name)
             elif isinstance(tp, model.UnknownFloatType):
                 return '_cffi_from_c_double(%s)' % (var,)

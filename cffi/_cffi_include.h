@@ -79,6 +79,15 @@ extern "C" {
 # endif
 #endif
 
+#ifdef __SIZEOF_INT128__
+# define HAVE_TYPE_INT128
+typedef __int128 _cffi_largest_int_t;
+typedef unsigned __int128 _cffi_largest_uint_t;
+#else
+typedef long long _cffi_largest_int_t;
+typedef unsigned long long _cffi_largest_uint_t;
+#endif
+
 #ifdef __GNUC__
 # define _CFFI_UNUSED_FN  __attribute__((unused))
 #else
@@ -116,10 +125,14 @@ extern "C" {
             PyInt_FromLong((long)x) :                                    \
          sizeof(type) == sizeof(long) ?                                  \
             PyLong_FromUnsignedLong((unsigned long)x) :                  \
-            PyLong_FromUnsignedLongLong((unsigned long long)x)) :        \
-        (sizeof(type) <= sizeof(long) ?                                  \
+         sizeof(type) <= sizeof(long long) ?                             \
+            PyLong_FromUnsignedLongLong((unsigned long long)x) :         \
+            _cffi_PyLong_FromUnsignedLargestInt(x)) :                    \
+       ( sizeof(type) <= sizeof(long) ?                                  \
             PyInt_FromLong((long)x) :                                    \
-            PyLong_FromLongLong((long long)x)))
+         sizeof(type) <= sizeof(long long) ?                             \
+            PyLong_FromLongLong((long long)x) :                          \
+            _cffi_PyLong_FromLargestInt(x) ))
 
 #define _cffi_to_c_int(o, type)                                          \
     ((type)(                                                             \
@@ -131,6 +144,8 @@ extern "C" {
                                          : (type)_cffi_to_c_i32(o)) :    \
      sizeof(type) == 8 ? (((type)-1) > 0 ? (type)_cffi_to_c_u64(o)       \
                                          : (type)_cffi_to_c_i64(o)) :    \
+     sizeof(type) == 16 ? (((type)-1) > 0 ? (type)_cffi_to_c_u128(o)     \
+                                          : (type)_cffi_to_c_i128(o)) :  \
      (Py_FatalError("unsupported size for type " #type), (type)0)))
 
 #define _cffi_to_c_i8                                                    \
@@ -189,7 +204,11 @@ extern "C" {
     ((int(*)(PyObject *))_cffi_exports[26])
 #define _cffi_from_c_wchar3216_t                                         \
     ((PyObject *(*)(int))_cffi_exports[27])
-#define _CFFI_NUM_EXPORTS 28
+#define _cffi_to_c_i128                                                  \
+                 ((_cffi_largest_int_t(*)(PyObject *))_cffi_exports[28])
+#define _cffi_to_c_u128                                                  \
+                 ((_cffi_largest_uint_t(*)(PyObject *))_cffi_exports[29])
+#define _CFFI_NUM_EXPORTS 30
 
 struct _cffi_ctypedescr;
 

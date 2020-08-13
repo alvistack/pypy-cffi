@@ -4,7 +4,8 @@
 
 #define CFFI_VERSION_MIN            0x2601
 #define CFFI_VERSION_CHAR16CHAR32   0x2801
-#define CFFI_VERSION_MAX            0x28FF
+#define CFFI_VERSION_INT128         0x2901
+#define CFFI_VERSION_MAX            0x29FF
 
 typedef struct FFIObject_s FFIObject;
 typedef struct LibObject_s LibObject;
@@ -171,6 +172,8 @@ static PyObject *b_init_cffi_1_0_external_module(PyObject *self, PyObject *arg)
         num_exports = 26;
     if (version >= CFFI_VERSION_CHAR16CHAR32)
         num_exports = 28;
+    if (version >= CFFI_VERSION_INT128)
+        num_exports = 30;
     memcpy(exports, (char *)cffi_exports, num_exports * sizeof(void *));
 
     /* make the module object */
