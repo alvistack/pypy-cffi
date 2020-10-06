@@ -16,6 +16,11 @@ library_dirs = []
 extra_compile_args = []
 extra_link_args = []
 
+if sys.platform == 'OpenVMS':
+    libraries = ['/oss$root/lib/libffi32.olb']
+    include_dirs = ['/oss$root/include', '[.cffi]']
+    define_macros = [('MAP_ANONYMOUS',0x10),('RTLD_GLOBAL',0),('RTLD_LOCAL',0)]
+
 
 def _ask_pkg_config(resultlist, option, result_prefix='', sysroot=False):
     pkg_config = os.environ.get('PKG_CONFIG','pkg-config')
@@ -193,7 +198,7 @@ Contact
 """,
         version='1.14.3',
         packages=['cffi'] if cpython else [],
-        package_data={'cffi': ['_cffi_include.h', 'parse_c_type.h', 
+        package_data={'cffi': ['_cffi_include.h', 'parse_c_type.h',
                                '_embedding.h', '_cffi_errors.h']}
                      if cpython else {},
         zip_safe=False,

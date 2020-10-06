@@ -54,7 +54,7 @@ class VGenericEngine(object):
         # on Windows, distutils insists on putting init_cffi_xyz in
         # 'export_symbols', so instead of fighting it, just give up and
         # give it one
-        if sys.platform == 'win32':
+        if sys.platform in ('win32', 'OpenVMS'):
             if sys.version_info >= (3,):
                 prefix = 'PyInit_'
             else:

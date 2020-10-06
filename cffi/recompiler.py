@@ -422,10 +422,10 @@ class Recompiler:
         prnt('    return NULL;')
         prnt('#endif')
         prnt('}')
-        # on Windows, distutils insists on putting init_cffi_xyz in
+        # on Windows and OpenVMS, distutils insists on putting init_cffi_xyz in
         # 'export_symbols', so instead of fighting it, just give up and
         # give it one
-        prnt('#  ifdef _MSC_VER')
+        prnt('#  if defined(_MSC_VER) || defined(__VMS)')
         prnt('     PyMODINIT_FUNC')
         prnt('#  if PY_MAJOR_VERSION >= 3')
         prnt('     PyInit_%s(void) { return NULL; }' % (base_module_name,))
@@ -1501,6 +1501,8 @@ def _patch_for_target(patchlist, target):
             target += '.dll'
         elif sys.platform == 'darwin':
             target += '.dylib'
+        elif sys.platform == 'OpenVMS':
+            target += '.exe'
         else:
             target += '.so'
     _patch_meth(patchlist, build_ext, 'get_ext_filename',

@@ -4,7 +4,11 @@
 #include <errno.h>
 
 #define _CFFI_INTERNAL
+#ifdef __VMS
+#include "parse_c_type.h"
+#else
 #include "../cffi/parse_c_type.h"
+#endif
 
 
 enum token_e {

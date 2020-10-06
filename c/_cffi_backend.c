@@ -356,7 +356,11 @@ typedef struct {
 # include "wchar_helper.h"
 #endif
 
+#ifdef __VMS
+#include "_cffi_errors.h"
+#else
 #include "../cffi/_cffi_errors.h"
+#endif
 
 typedef struct _cffi_allocator_s {
     PyObject *ca_alloc, *ca_free;
@@ -794,7 +798,7 @@ _my_PyLong_AsLongLong(PyObject *ob)
     if (PyInt_Check(ob)) {
         return PyInt_AS_LONG(ob);
     }
-    else 
+    else
 #endif
     if (PyLong_Check(ob)) {
         return PyLong_AsLongLong(ob);
@@ -4301,6 +4305,15 @@ static PyObject *dl_load_function(DynLibObject *dlobj, PyObject *args)
     }
     dlerror();   /* clear error condition */
     funcptr = dlsym(dlobj->dl_handle, funcname);
+#ifdef __VMS
+    if (funcptr == NULL) {
+        char *deccName = malloc(strlen(funcname) + 5);
+        strcpy(deccName, "decc$");
+        strcat(deccName, funcname);
+        funcptr = dlsym(dlobj->dl_handle, deccName);
+        free(deccName);
+    }
+#endif
     if (funcptr == NULL) {
         const char *error = dlerror();
         PyErr_Format(PyExc_AttributeError,
@@ -4435,7 +4448,7 @@ static void *b_do_dlopen(PyObject *args, const char **p_printable_filename,
     int flags = 0;
     *p_temp = NULL;
     *auto_close = 1;
-    
+
     if (PyTuple_GET_SIZE(args) == 0 || PyTuple_GET_ITEM(args, 0) == Py_None) {
         PyObject *dummy;
         if (!PyArg_ParseTuple(args, "|Oi:load_library",
@@ -4523,6 +4536,12 @@ static void *b_do_dlopen(PyObject *args, const char **p_printable_filename,
         return NULL;
     }
 #endif
+#ifdef __VMS
+    if (filename_or_null == NULL) {
+        PyErr_SetString(PyExc_OSError, "dlopen(None) not supported on OpenVMS");
+        return NULL;
+    }
+#endif
 
     handle = dlopen(filename_or_null, flags);
 
@@ -4558,7 +4577,7 @@ static PyObject *b_load_library(PyObject *self, PyObject *args)
     dlobj->dl_handle = handle;
     dlobj->dl_name = strdup(printable_filename);
     dlobj->dl_auto_close = auto_close;
- 
+
  error:
     Py_XDECREF(temp);
     return (PyObject *)dlobj;
