@@ -51,7 +51,7 @@ class VGenericEngine(object):
         # ffi._parser._declarations.  This generates all the functions.
         self._generate('decl')
         #
-        # on Windows, distutils insists on putting init_cffi_xyz in
+        # on Windows and OpenVMS, distutils insists on putting init_cffi_xyz in
         # 'export_symbols', so instead of fighting it, just give up and
         # give it one
         if sys.platform in ('win32', 'OpenVMS'):

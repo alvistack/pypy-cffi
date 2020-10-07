@@ -357,6 +357,7 @@ typedef struct {
 #endif
 
 #ifdef __VMS
+// OpenVMS compiler does not support relative #include
 #include "_cffi_errors.h"
 #else
 #include "../cffi/_cffi_errors.h"
@@ -4306,6 +4307,7 @@ static PyObject *dl_load_function(DynLibObject *dlobj, PyObject *args)
     dlerror();   /* clear error condition */
     funcptr = dlsym(dlobj->dl_handle, funcname);
 #ifdef __VMS
+    // CRTL adds a prefix
     if (funcptr == NULL) {
         char *deccName = malloc(strlen(funcname) + 5);
         strcpy(deccName, "decc$");

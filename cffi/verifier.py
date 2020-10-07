@@ -61,8 +61,6 @@ class Verifier(object):
             k2 = k2.lstrip('0').rstrip('L')
             modulename = '_cffi_%s_%s%s%s' % (tag, self._vengine._class_key,
                                               k1, k2)
-            if sys.platform == 'OpenVMS':
-                modulename = modulename[:-8]
         suffix = _get_so_suffixes()[0]
         self.tmpdir = tmpdir or _caller_dir_pycache()
         self.sourcefilename = os.path.join(self.tmpdir, modulename + source_extension)

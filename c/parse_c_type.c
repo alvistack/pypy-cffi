@@ -5,6 +5,7 @@
 
 #define _CFFI_INTERNAL
 #ifdef __VMS
+// OpenVMS compiler does not support relative #include
 #include "parse_c_type.h"
 #else
 #include "../cffi/parse_c_type.h"
