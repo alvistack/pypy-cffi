@@ -745,7 +745,9 @@ static int do_realize_lazy_struct(CTypeDescrObject *ct)
             switch (_CFFI_GETOP(op)) {
 
             case _CFFI_OP_BITFIELD:
+                #ifndef __VMS
                 assert(fld->field_size >= 0);
+                #endif
                 fbitsize = (int)fld->field_size;
                 /* fall-through */
             case _CFFI_OP_NOOP:

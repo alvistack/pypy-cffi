@@ -206,6 +206,8 @@ static int _update_cache_to_call_python(struct _cffi_externpy_s *externpy)
 #   define read_barrier()  __compiler_barrier()
 # elif defined(__hpux)
 #   define read_barrier()  _Asm_mf()
+# elif defined(__VMS)
+#   define read_barrier()  /* missing, no warnings */
 # else
 #   define read_barrier()  /* missing */
 #   warning "no definition for read_barrier(), missing synchronization for\
