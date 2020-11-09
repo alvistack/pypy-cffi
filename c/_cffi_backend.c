@@ -9,7 +9,11 @@
 #include "misc_win32.h"
 #else
 #include <stddef.h>
+#ifndef __VMS
 #include <stdint.h>
+#else
+#include "stdint_openvms.h"
+#endif
 #include <dlfcn.h>
 #include <errno.h>
 #include <ffi.h>
@@ -54,7 +58,11 @@
    typedef unsigned char _Bool;
 # endif
 #else
-# include <stdint.h>
+#ifndef __VMS
+#include <stdint.h>
+#else
+#include "stdint_openvms.h"
+#endif
 # if (defined (__SVR4) && defined (__sun)) || defined(_AIX) || defined(__hpux)
 #  include <alloca.h>
 # endif

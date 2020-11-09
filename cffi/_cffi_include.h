@@ -102,7 +102,11 @@ extern "C" {
 #  endif
 # endif
 #else
-# include <stdint.h>
+#ifndef __VMS
+#include <stdint.h>
+#else
+#include "stdint_openvms.h"
+#endif
 # if (defined (__SVR4) && defined (__sun)) || defined(_AIX) || defined(__hpux)
 #  include <alloca.h>
 # endif
