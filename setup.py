@@ -76,10 +76,6 @@ def get_config():
     config = Distribution().get_command_obj('config')
     return config
 
-def macosx_deployment_target():
-    from distutils.sysconfig import get_config_var
-    return tuple(map(int, get_config_var("MACOSX_DEPLOYMENT_TARGET").split('.')))
-
 def ask_supports_thread():
     config = get_config()
     ok = (sys.platform != 'win32' and
@@ -196,7 +192,7 @@ Contact
 
 `Mailing list <https://groups.google.com/forum/#!forum/python-cffi>`_
 """,
-        version='1.14.3',
+        version='1.14.5',
         packages=['cffi'] if cpython else [],
         package_data={'cffi': ['_cffi_include.h', 'parse_c_type.h',
                                '_embedding.h', '_cffi_errors.h']}

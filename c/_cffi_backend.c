@@ -2,7 +2,7 @@
 #include <Python.h>
 #include "structmember.h"
 
-#define CFFI_VERSION  "1.14.3"
+#define CFFI_VERSION  "1.14.5"
 
 #ifdef MS_WIN32
 #include <windows.h>
@@ -147,31 +147,41 @@ typedef unsigned long long int  uintmax_t;
  * should not be open to the fork() bug.
  *
  * This is also used on macOS, provided we are executing on macOS 10.15 or
- * above.
+ * above.  It's a mess because it needs runtime checks in that case.
  */
 #ifdef __NetBSD__
 
 # define CFFI_CHECK_FFI_CLOSURE_ALLOC 1
+# define CFFI_CHECK_FFI_CLOSURE_ALLOC_MAYBE 1
 # define CFFI_CHECK_FFI_PREP_CLOSURE_LOC 1
+# define CFFI_CHECK_FFI_PREP_CLOSURE_LOC_MAYBE 1
 # define CFFI_CHECK_FFI_PREP_CIF_VAR 0
+# define CFFI_CHECK_FFI_PREP_CIF_VAR_MAYBE 0
 
 #elif defined(__APPLE__) && defined(FFI_AVAILABLE_APPLE)
 
 # define CFFI_CHECK_FFI_CLOSURE_ALLOC __builtin_available(macos 10.15, ios 13, watchos 6, tvos 13, *)
+# define CFFI_CHECK_FFI_CLOSURE_ALLOC_MAYBE 1
 # define CFFI_CHECK_FFI_PREP_CLOSURE_LOC __builtin_available(macos 10.15, ios 13, watchos 6, tvos 13, *)
+# define CFFI_CHECK_FFI_PREP_CLOSURE_LOC_MAYBE 1
 # define CFFI_CHECK_FFI_PREP_CIF_VAR __builtin_available(macos 10.15, ios 13, watchos 6, tvos 13, *)
-
-# include "malloc_closure.h"
+# define CFFI_CHECK_FFI_PREP_CIF_VAR_MAYBE 1
 
 #else
 
 # define CFFI_CHECK_FFI_CLOSURE_ALLOC 0
+# define CFFI_CHECK_FFI_CLOSURE_ALLOC_MAYBE 0
 # define CFFI_CHECK_FFI_PREP_CLOSURE_LOC 0
+# define CFFI_CHECK_FFI_PREP_CLOSURE_LOC_MAYBE 0
 # define CFFI_CHECK_FFI_PREP_CIF_VAR 0
-
-# include "malloc_closure.h"
+# define CFFI_CHECK_FFI_PREP_CIF_VAR_MAYBE 0
 
 #endif
+
+/* always includes this, even if it turns out not to be used on NetBSD
+   because calls are behind "if (0)" */
+#include "malloc_closure.h"
+
 
 #if PY_MAJOR_VERSION >= 3
 # define STR_OR_BYTES "bytes"
@@ -230,6 +240,10 @@ typedef unsigned long long int  uintmax_t;
 
 #if PY_VERSION_HEX < 0x030900a4
 # define Py_SET_REFCNT(obj, val) (Py_REFCNT(obj) = (val))
+#endif
+
+#if PY_VERSION_HEX >= 0x03080000
+# define USE_WRITEUNRAISABLEMSG
 #endif
 
 /************************************************************/
@@ -1975,11 +1989,12 @@ static void cdataowninggc_dealloc(CDataObject *cd)
         ffi_closure *closure = ((CDataObject_closure *)cd)->closure;
         PyObject *args = (PyObject *)(closure->user_data);
         Py_XDECREF(args);
+#if CFFI_CHECK_FFI_CLOSURE_ALLOC_MAYBE
         if (CFFI_CHECK_FFI_CLOSURE_ALLOC) {
             ffi_closure_free(closure);
-        } else {
+        } else
+#endif
             cffi_closure_free(closure);
-        }
     }
     else {
         Py_FatalError("cdata CDataOwningGC_Type with unexpected type flags");
@@ -4582,14 +4597,18 @@ static void *b_do_dlopen(PyObject *args, const char **p_printable_filename,
         if (PyUnicode_Check(s))
         {
             s = PyUnicode_AsUTF8String(s);
-            if (s == NULL)
+            if (s == NULL) {
+                PyMem_Free(filename_or_null);
                 return NULL;
+            }
             *p_temp = s;
         }
 #endif
         *p_printable_filename = PyText_AsUTF8(s);
-        if (*p_printable_filename == NULL)
+        if (*p_printable_filename == NULL) {
+            PyMem_Free(filename_or_null);
             return NULL;
+        }
     }
     if ((flags & (RTLD_NOW | RTLD_LAZY)) == 0)
         flags |= RTLD_NOW;
@@ -4608,6 +4627,7 @@ static void *b_do_dlopen(PyObject *args, const char **p_printable_filename,
 #endif
 
     handle = dlopen(filename_or_null, flags);
+    PyMem_Free(filename_or_null);
 
 #ifdef MS_WIN32
   got_handle:
@@ -5921,8 +5941,7 @@ static cif_description_t *fb_prepare_cif(PyObject *fargs,
     char *buffer;
     cif_description_t *cif_descr;
     struct funcbuilder_s funcbuffer;
-    ffi_status status;
-    char did_prep_cif_var = 0;
+    ffi_status status = (ffi_status)-1;
 
     funcbuffer.nb_bytes = 0;
     funcbuffer.bufferp = NULL;
@@ -5947,16 +5966,17 @@ static cif_description_t *fb_prepare_cif(PyObject *fargs,
     cif_descr = (cif_description_t *)buffer;
 
     /* use `ffi_prep_cif_var` if necessary and available */
+#if CFFI_CHECK_FFI_PREP_CIF_VAR_MAYBE
     if (variadic_nargs_declared >= 0) {
         if (CFFI_CHECK_FFI_PREP_CIF_VAR) {
             status = ffi_prep_cif_var(&cif_descr->cif, fabi,
                                       variadic_nargs_declared, funcbuffer.nargs,
                                       funcbuffer.rtype, funcbuffer.atypes);
-            did_prep_cif_var = 1;
         }
     }
+#endif
 
-    if (!did_prep_cif_var) {
+    if (status == (ffi_status)-1) {
         status = ffi_prep_cif(&cif_descr->cif, fabi, funcbuffer.nargs,
                               funcbuffer.rtype, funcbuffer.atypes);
     }
@@ -6133,6 +6153,43 @@ static void _my_PyErr_WriteUnraisable(PyObject *t, PyObject *v, PyObject *tb,
                                       char *extra_error_line)
 {
     /* like PyErr_WriteUnraisable(), but write a full traceback */
+#ifdef USE_WRITEUNRAISABLEMSG
+
+    /* PyErr_WriteUnraisable actually writes the full traceback anyway
+       from Python 3.4, but we can't really get the formatting of the
+       custom text to be what we want.  We can do better from Python
+       3.8 by calling the new _PyErr_WriteUnraisableMsg().
+       Luckily it's also Python 3.8 that adds new functionality that
+       people might want: the new sys.unraisablehook().
+    */
+    PyObject *s;
+    int first_char;
+    assert(objdescr != NULL && objdescr[0] != 0);   /* non-empty */
+    first_char = objdescr[0];
+    if (first_char >= 'A' && first_char <= 'Z')
+        first_char += 'a' - 'A';    /* lower() the very first character */
+    if (extra_error_line == NULL)
+        extra_error_line = "";
+
+    if (obj != NULL)
+        s = PyUnicode_FromFormat("%c%s%R%s",
+            first_char, objdescr + 1, obj, extra_error_line);
+    else
+        s = PyUnicode_FromFormat("%c%s%s",
+            first_char, objdescr + 1, extra_error_line);
+
+    PyErr_Restore(t, v, tb);
+    if (s != NULL) {
+        _PyErr_WriteUnraisableMsg(PyText_AS_UTF8(s), NULL);
+        Py_DECREF(s);
+    }
+    else
+        PyErr_WriteUnraisable(obj);   /* best effort */
+    PyErr_Clear();
+
+#else
+
+    /* version for Python 2.7 and < 3.8 */
     PyObject *f;
 #if PY_MAJOR_VERSION >= 3
     /* jump through hoops to ensure the tb is attached to v, on Python 3 */
@@ -6157,6 +6214,8 @@ static void _my_PyErr_WriteUnraisable(PyObject *t, PyObject *v, PyObject *tb,
     Py_XDECREF(t);
     Py_XDECREF(v);
     Py_XDECREF(tb);
+
+#endif
 }
 
 static void general_invoke_callback(int decode_args_from_libffi,
@@ -6206,7 +6265,11 @@ static void general_invoke_callback(int decode_args_from_libffi,
         goto error;
     if (convert_from_object_fficallback(result, SIGNATURE(1), py_res,
                                         decode_args_from_libffi) < 0) {
+#ifdef USE_WRITEUNRAISABLEMSG
+        extra_error_line = ", trying to convert the result back to C";
+#else
         extra_error_line = "Trying to convert the result back to C:\n";
+#endif
         goto error;
     }
  done:
@@ -6258,10 +6321,16 @@ static void general_invoke_callback(int decode_args_from_libffi,
             _my_PyErr_WriteUnraisable(exc1, val1, tb1,
                                       "From cffi callback ", py_ob,
                                       extra_error_line);
+#ifdef USE_WRITEUNRAISABLEMSG
+            _my_PyErr_WriteUnraisable(exc2, val2, tb2,
+                 "during handling of the above exception by 'onerror'",
+                 NULL, NULL);
+#else
             extra_error_line = ("\nDuring the call to 'onerror', "
                                 "another exception occurred:\n\n");
             _my_PyErr_WriteUnraisable(exc2, val2, tb2,
                                       NULL, NULL, extra_error_line);
+#endif
             _cffi_stop_error_capture(ecap);
         }
     }
@@ -6340,6 +6409,17 @@ static PyObject *prepare_callback_info_tuple(CTypeDescrObject *ct,
     return infotuple;
 }
 
+/* messily try to silence a gcc/clang deprecation warning for
+   ffi_prep_closure.  Don't miss the "pragma pop" after the function.
+   This is done around the whole function because very old GCCs don't
+   support it inside a function. */
+#if defined(__clang__)
+#  pragma clang diagnostic push
+#  pragma clang diagnostic ignored "-Wdeprecated-declarations"
+#elif defined(__GNUC__)
+#  pragma GCC diagnostic push
+#  pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+#endif
 static PyObject *b_callback(PyObject *self, PyObject *args)
 {
     CTypeDescrObject *ct;
@@ -6359,9 +6439,12 @@ static PyObject *b_callback(PyObject *self, PyObject *args)
     if (infotuple == NULL)
         return NULL;
 
+#if CFFI_CHECK_FFI_CLOSURE_ALLOC_MAYBE
     if (CFFI_CHECK_FFI_CLOSURE_ALLOC) {
         closure = ffi_closure_alloc(sizeof(ffi_closure), &closure_exec);
-    } else {
+    } else
+#endif
+    {
         closure = cffi_closure_alloc();
         closure_exec = closure;
     }
@@ -6382,8 +6465,8 @@ static PyObject *b_callback(PyObject *self, PyObject *args)
     cd->head.c_type = ct;
     cd->head.c_data = (char *)closure_exec;
     cd->head.c_weakreflist = NULL;
+    closure->user_data = NULL;
     cd->closure = closure;
-    PyObject_GC_Track(cd);
 
     cif_descr = (cif_description_t *)ct->ct_extra;
     if (cif_descr == NULL) {
@@ -6393,30 +6476,20 @@ static PyObject *b_callback(PyObject *self, PyObject *args)
         goto error;
     }
 
+#if CFFI_CHECK_FFI_PREP_CLOSURE_LOC_MAYBE
     if (CFFI_CHECK_FFI_PREP_CLOSURE_LOC) {
         status = ffi_prep_closure_loc(closure, &cif_descr->cif,
                                       invoke_callback, infotuple, closure_exec);
     }
-    else {
+    else
+#endif
+    {
 #if defined(__APPLE__) && defined(FFI_AVAILABLE_APPLE) && !FFI_LEGACY_CLOSURE_API
         PyErr_Format(PyExc_SystemError, "ffi_prep_closure_loc() is missing");
         goto error;
 #else
-/* messily try to silence a gcc/clang deprecation warning here */
-# if defined(__clang__)
-#  pragma clang diagnostic push
-#  pragma clang diagnostic ignored "-Wdeprecated-declarations"
-# elif defined(__GNUC__)
-#  pragma GCC diagnostic push
-#  pragma GCC diagnostic ignored "-Wdeprecated-declarations"
-# endif
         status = ffi_prep_closure(closure, &cif_descr->cif,
                                   invoke_callback, infotuple);
-# if defined(__clang__)
-#  pragma clang diagnostic pop
-# elif defined(__GNUC__)
-#  pragma GCC diagnostic pop
-# endif
 #endif
     }
 
@@ -6440,23 +6513,30 @@ static PyObject *b_callback(PyObject *self, PyObject *args)
             "different from the 'ffi.h' file seen at compile-time)");
         goto error;
     }
+    PyObject_GC_Track(cd);
     return (PyObject *)cd;
 
  error:
     closure->user_data = NULL;
     if (cd == NULL) {
+#if CFFI_CHECK_FFI_CLOSURE_ALLOC_MAYBE
         if (CFFI_CHECK_FFI_CLOSURE_ALLOC) {
             ffi_closure_free(closure);
         }
-        else {
+        else
+#endif
             cffi_closure_free(closure);
-        }
     }
     else
         Py_DECREF(cd);
     Py_XDECREF(infotuple);
     return NULL;
 }
+#if defined(__clang__)
+#  pragma clang diagnostic pop
+#elif defined(__GNUC__)
+#  pragma GCC diagnostic pop
+#endif
 
 static PyObject *b_new_enum_type(PyObject *self, PyObject *args)
 {
