@@ -60,12 +60,7 @@ _my_PyUnicode_AsSingleChar16(PyObject *unicode, cffi_char16_t *result,
 {
     cffi_char32_t ch;
     if (PyUnicode_GET_LENGTH(unicode) != 1) {
-#ifdef __VMS
-        // OpenVMS has no 'z' option
-        sprintf(err_got, "unicode string of length %d",
-#else
-        sprintf(err_got, "unicode string of length %zd",
-#endif
+        sprintf(err_got, "unicode string of length %"PY_FORMAT_SIZE_T"d",
                 PyUnicode_GET_LENGTH(unicode));
         return -1;
     }
@@ -85,12 +80,7 @@ _my_PyUnicode_AsSingleChar32(PyObject *unicode, cffi_char32_t *result,
                              char *err_got)
 {
     if (PyUnicode_GET_LENGTH(unicode) != 1) {
-#ifdef __VMS
-        // OpenVMS has no 'z' option
-        sprintf(err_got, "unicode string of length %d",
-#else
-        sprintf(err_got, "unicode string of length %zd",
-#endif
+        sprintf(err_got, "unicode string of length %"PY_FORMAT_SIZE_T"d",
                 PyUnicode_GET_LENGTH(unicode));
         return -1;
     }
