@@ -1,0 +1,5 @@
+python-cffi source: no-debian-changes
+python-cffi source: not-binnmuable-any-depends-any
+python-cffi source: source-contains-prebuilt-windows-binary
+python-cffi source: source-is-missing
+python-cffi source: source-package-encodes-python-version
