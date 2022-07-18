@@ -1,0 +1,4 @@
+python3-cffi: copyright-without-copyright-notice
+python3-cffi: initial-upload-closes-no-bugs
+python3-cffi: no-manual-page
+python3-cffi: zero-byte-file-in-doc-directory

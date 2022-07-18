@@ -1,0 +1,8 @@
+*.pydist
+*.substvars
+*debhelper*
+.debhelper
+files
+python3-cffi
+python3-cffi-backend
+tmp
